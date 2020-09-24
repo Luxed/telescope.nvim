@@ -650,4 +650,57 @@ builtin.current_buffer_fuzzy_find = function(opts)
   }):find()
 end
 
+
+builtin.git_branches = function(opts)
+  opts = opts or {}
+
+  local command = 'git branch -r --sort=-committerdate --format="%(refname:lstrip=2)"'
+  local branches = vim.fn.systemlist(command)
+  local current_branch = vim.fn.systemlist('git branch --show-current')[1]
+
+  local results = {}
+  for _, branch in pairs(branches) do
+    if branch ~= current_branch and branch ~= "HEAD" then
+      table.insert(results, branch)
+    end
+  end
+
+  pickers.new(opts, {
+    prompt = 'Branches',
+    finder = finders.new_table(results),
+    sorter = sorters.get_generic_fuzzy_sorter(),
+
+    attach_mappings = function (_, map)
+      map('i', '<CR>', actions.git_checkout)
+      map('n', '<CR>', actions.git_checkout)
+      return true
+    end,
+  }):find()
+end
+
+builtin.git_tags = function(opts)
+  opts = opts or {}
+
+  local tags = vim.fn.systemlist('git ls-remote -t --refs')
+  table.remove(tags, 1) -- first line is only information about current remote
+
+  local results = {}
+  for _, tag in pairs(tags) do
+    tag = vim.fn.substitute(tag, '^.*refs/tags/', '', '')
+    table.insert(results, tag)
+  end
+
+  pickers.new(opts, {
+    prompt = 'Tags',
+    finder = finders.new_table(results),
+    sorter = sorters.get_generic_fuzzy_sorter(),
+
+    attach_mappings = function (_, map)
+      map('i', '<CR>', actions.git_checkout)
+      map('n', '<CR>', actions.git_checkout)
+      return true
+    end,
+  }):find()
+end
+
 return builtin

@@ -175,4 +175,15 @@ actions.insert_value = function(prompt_bufnr)
   return entry.value
 end
 
+actions.git_checkout = function(prompt_bufnr)
+  local entry = actions.get_selected_entry(prompt_bufnr)
+  -- Remove remote name
+  local entry_value = vim.fn.substitute(entry.value, '^.*/', '', '')
+
+  actions.close(prompt_bufnr)
+
+  local git_cmd = '!git checkout ' .. entry_value
+  vim.cmd(git_cmd)
+end
+
 return actions
