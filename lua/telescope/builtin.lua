@@ -654,7 +654,7 @@ end
 builtin.git_branches = function(opts)
   opts = opts or {}
 
-  local command = 'git branch -r --sort=-committerdate --format="%(refname:lstrip=2)"'
+  local command = 'git branch -r --sort=-committerdate --format="%(refname:lstrip=3)"'
   local branches = vim.fn.systemlist(command)
   local current_branch = vim.fn.systemlist('git branch --show-current')[1]
 
