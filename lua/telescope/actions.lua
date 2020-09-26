@@ -180,10 +180,10 @@ actions.git_checkout = function(prompt_bufnr)
 
   actions.close(prompt_bufnr)
 
-  local git_cmd = '!git checkout '
+  local git_cmd = '!git checkout'
 
   if entry.remote_name == 'local' then
-    git_cmd = git_cmd .. entry.branch_name
+    git_cmd = string.format('%s %s', git_cmd, entry.branch_name)
   else
     git_cmd = string.format('%s -b %s %s/%s', git_cmd, entry.branch_name, entry.remote_name, entry.branch_name)
   end
