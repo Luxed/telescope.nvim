@@ -24,6 +24,9 @@ local extend = function(opts, defaults)
   return result
 end
 
+local ns_telescope_selection = a.nvim_create_namespace('telescope_selection')
+local ns_telescope_matching = a.nvim_create_namespace('telescope_matching')
+
 local pickers = {}
 
 -- TODO: Add motions to keybindings
@@ -188,23 +191,25 @@ function Picker:get_window_options(max_columns, max_lines, prompt_title)
   return getter(self, max_columns, max_lines, prompt_title)
 end
 
---- Take a row and get an index
+--- Take a row and get an index.
+---@note: Rows are 0-indexed, and `index` is 1 indexed (table index)
 ---@param index number: The row being displayed
 ---@return number The row for the picker to display in
 function Picker:get_row(index)
   if self.sorting_strategy == 'ascending' then
-    return index
+    return index - 1
   else
     return self.max_results - index + 1
   end
 end
 
 --- Take a row and get an index
+---@note: Rows are 0-indexed, and `index` is 1 indexed (table index)
 ---@param row number: The row being displayed
 ---@return number The index in line_manager
 function Picker:get_index(row)
   if self.sorting_strategy == 'ascending' then
-    return row
+    return row + 1
   else
     return self.max_results - row + 1
   end
@@ -212,7 +217,7 @@ end
 
 function Picker:get_reset_row()
   if self.sorting_strategy == 'ascending' then
-    return 1
+    return 0
   else
     return self.max_results
   end
@@ -235,9 +240,51 @@ function Picker:clear_extra_rows(results_bufnr)
     end
 
     local empty_lines = utils.repeated_table(worst_line, "")
-    vim.api.nvim_buf_set_lines(results_bufnr, 0, worst_line, false, empty_lines)
+    pcall(vim.api.nvim_buf_set_lines, results_bufnr, 0, worst_line, false, empty_lines)
+  end
+end
 
-    log.trace("Worst Line after process_complete: %s", worst_line, results_bufnr)
+function Picker:highlight_displayed_rows(results_bufnr, prompt)
+  if not self.sorter.highlighter then
+    return
+  end
+
+  vim.api.nvim_buf_clear_namespace(results_bufnr, ns_telescope_matching, 0, -1)
+
+  local displayed_rows = vim.api.nvim_buf_get_lines(results_bufnr, 0, -1, false)
+  for row_index = 1, #displayed_rows do
+    local display = displayed_rows[row_index]
+
+    self:highlight_one_row(results_bufnr, prompt, display, row_index - 1)
+  end
+end
+
+function Picker:highlight_one_row(results_bufnr, prompt, display, row)
+  local highlights = self.sorter:highlighter(prompt, display)
+  if highlights then
+    for _, hl in ipairs(highlights) do
+      local highlight, start, finish
+      if type(hl) == 'table' then
+        highlight = hl.highlight or 'TelescopeMatching'
+        start = hl.start
+        finish = hl.finish or hl.start
+      elseif type(hl) == 'number' then
+        highlight = 'TelescopeMatching'
+        start = hl
+        finish = hl
+      else
+        error('Invalid higlighter fn')
+      end
+
+      vim.api.nvim_buf_add_highlight(
+        results_bufnr,
+        ns_telescope_matching,
+        highlight,
+        row,
+        start - 1,
+        finish
+      )
+    end
   end
 end
 
@@ -416,6 +463,7 @@ function Picker:find()
       end
 
       self:clear_extra_rows(results_bufnr)
+      self:highlight_displayed_rows(results_bufnr, prompt)
 
       PERF("Filtered Amount    ", filtered_amount)
       PERF("Displayed Amount   ", displayed_amount)
@@ -448,7 +496,7 @@ function Picker:find()
 
   -- TODO: Use WinLeave as well?
   local on_buf_leave = string.format(
-    [[  autocmd BufLeave <buffer> ++nested ++once :lua require('telescope.pickers').on_close_prompt(%s)]],
+    [[  autocmd BufLeave <buffer> ++nested ++once :silent lua require('telescope.pickers').on_close_prompt(%s)]],
     prompt_bufnr)
 
   vim.cmd([[augroup PickerInsert]])
@@ -519,7 +567,7 @@ function Picker:close_windows(status)
     if bdelete
         and vim.api.nvim_buf_is_valid(bufnr)
         and not vim.api.nvim_buf_get_option(bufnr, 'buflisted') then
-      vim.cmd(string.format("bdelete! %s", bufnr))
+      vim.cmd(string.format("silent! bdelete! %s", bufnr))
     end
 
     if not vim.api.nvim_win_is_valid(win_id) then
@@ -551,10 +599,8 @@ function Picker:close_windows(status)
   state.clear_status(status.prompt_bufnr)
 end
 
-local ns_telescope_selection = a.nvim_create_namespace('telescope_selection')
-
 function Picker:get_selection()
-  return self._selection
+  return self._selection_entry
 end
 
 function Picker:get_selection_row()
@@ -566,7 +612,7 @@ function Picker:move_selection(change)
 end
 
 function Picker:reset_selection()
-  self._selection = nil
+  self._selection_entry = nil
   self._selection_row = nil
 end
 
@@ -575,8 +621,8 @@ function Picker:set_selection(row)
   -- TODO: Scrolling past max results
   if row > self.max_results then
     row = self.max_results
-  elseif row < 1 then
-    row = 1
+  elseif row < 0 then
+    row = 0
   end
 
   if not self:can_select_row(row) then
@@ -597,16 +643,27 @@ function Picker:set_selection(row)
   --        Probably something with setting a row that's too high for this?
   --        Not sure.
   local set_ok, set_errmsg = pcall(function()
+    local prompt = vim.api.nvim_buf_get_lines(self.prompt_bufnr, 0, 1, false)[1]
+
     -- Handle adding '> ' to beginning of selections
     if self._selection_row then
       local old_selection = a.nvim_buf_get_lines(results_bufnr, self._selection_row, self._selection_row + 1, false)[1]
 
       if old_selection then
-        a.nvim_buf_set_lines(results_bufnr, self._selection_row, self._selection_row + 1, false, {'  ' .. old_selection:sub(3)})
+        local old_display = '  ' .. old_selection:sub(3)
+        a.nvim_buf_set_lines(results_bufnr, self._selection_row, self._selection_row + 1, false, {old_display})
+
+        if prompt and self.sorter.highlighter then
+          self:highlight_one_row(results_bufnr, prompt, old_display, self._selection_row)
+        end
       end
     end
 
-    a.nvim_buf_set_lines(results_bufnr, row, row + 1, false, {'> ' .. (a.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1] or ''):sub(3)})
+    local display = '> ' .. (a.nvim_buf_get_lines(results_bufnr, row, row + 1, false)[1] or ''):sub(3)
+
+    -- TODO: You should go back and redraw the highlights for this line from the sorter.
+    -- That's the only smart thing to do.
+    a.nvim_buf_set_lines(results_bufnr, row, row + 1, false, {display})
 
     a.nvim_buf_clear_namespace(results_bufnr, ns_telescope_selection, 0, -1)
     a.nvim_buf_add_highlight(
@@ -617,6 +674,10 @@ function Picker:set_selection(row)
       0,
       -1
     )
+
+    if prompt and self.sorter.highlighter then
+      self:highlight_one_row(results_bufnr, prompt, display, row)
+    end
   end)
 
   if not set_ok then
@@ -624,21 +685,12 @@ function Picker:set_selection(row)
     return
   end
 
-  -- if self._match_id then
-  --   -- vim.fn.matchdelete(self._match_id)
-  --   vim.fn.clearmatches(results_win)
-  -- end
-
-  -- self._match_id = vim.fn.matchaddpos("Conceal", { {row + 1, 1, 2} }, 0, -1, { window = results_win, conceal = ">" })
-  if self._selection == entry and self._selection_row == row then
+  if self._selection_entry == entry and self._selection_row == row then
     return
   end
 
-  -- TODO: Don't let you go over / under the buffer limits
-  -- TODO: Make sure you start exactly at the bottom selected
-
   -- TODO: Get row & text in the same obj
-  self._selection = entry
+  self._selection_entry = entry
   self._selection_row = row
 
   if status.preview_win and self.previewer then
@@ -680,6 +732,7 @@ pickers.entry_manager = function(max_results, set_entry, info)
 
   set_entry = set_entry or function() end
 
+  local should_save_result = function(index) return index <= max_results + 1 end
   local worst_acceptable_score = math.huge
 
   return setmetatable({
@@ -701,7 +754,7 @@ pickers.entry_manager = function(max_results, set_entry, info)
         end
 
         -- Don't add results that are too bad.
-        if index >= max_results then
+        if not should_save_result(index) then
           return
         end
       end
@@ -733,9 +786,9 @@ pickers.entry_manager = function(max_results, set_entry, info)
         index = index + 1
         entry = next_entry
 
-      until not next_entry or index > max_results
+      until not next_entry or not should_save_result(index)
 
-      if index > max_results then
+      if not should_save_result(index) then
         worst_acceptable_score = last_score
       end
     end,

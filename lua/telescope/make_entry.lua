@@ -3,6 +3,7 @@ local has_devicons, devicons = pcall(require, 'nvim-web-devicons')
 local utils = require('telescope.utils')
 
 local get_default = utils.get_default
+local os_sep = utils.get_separator()
 
 local make_entry = {}
 
@@ -212,7 +213,12 @@ function make_entry.gen_from_buffer(opts)
 
     -- if bufname is inside the cwd, trim that part of the string
     if bufname:sub(1, #cwd) == cwd  then
-      bufname = bufname:sub(#cwd + 1, #bufname)
+      local offset =  0
+      -- if  cwd does ends in the os separator, we need to take it off
+      if cwd:sub(#cwd, #cwd) ~= os_sep then
+        offset = 1
+      end
+      bufname = bufname:sub(#cwd + 1 + offset, #bufname)
     end
 
     local position = get_position(entry)
@@ -281,6 +287,55 @@ function make_entry.gen_from_treesitter(opts)
       start = start_row,
       finish = end_row
     }
+  end
+end
+
+function make_entry.gen_from_tagfile(opts)
+  local help_entry, version
+  local delim = string.char(7)
+
+  local make_display = function(line)
+    help_entry = ""
+    display    = ""
+    version    = ""
+
+    line = line .. delim
+    for section in line:gmatch("(.-)" .. delim) do
+      if section:find("^vim:") == nil then
+        local ver = section:match("^neovim:(.*)")
+        if ver == nil then
+          help_entry = section
+        else
+          version = ver:sub(1, -2)
+        end
+      end
+    end
+
+    result = {}
+    if version ~= "" then -- some Vim only entries are unversioned
+      if opts.show_version then
+        result.display = string.format("%s [%s]", help_entry, version)
+      else
+        result.display = help_entry
+      end
+      result.value = help_entry
+    end
+
+    return result
+  end
+
+  return function(line)
+    local entry = {
+      entry_type = make_entry.types.GENERIC,
+
+    }
+    local d = make_display(line)
+    entry.valid   = next(d) ~= nil
+    entry.display = d.display
+    entry.value   = d.value
+    entry.ordinal = d.value
+
+    return entry
   end
 end
 

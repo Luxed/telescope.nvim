@@ -17,6 +17,12 @@ if 1 ~= vim.fn.has('nvim-0.5') then
   return
 end
 
+if 2 > vim.o.report then
+  vim.api.nvim_err_writeln(string.format("[telescope] It seems you have `set report=%s`", vim.o.report))
+  vim.api.nvim_err_writeln("[telescope] Instead, change 'report' back to its default value. `set report=2`.")
+  vim.api.nvim_err_writeln("[telescope] If you do not, you will have a bad experience")
+end
+
 
 -- TODO: Give some bonus weight to files we've picked before
 -- TODO: Give some bonus weight to oldfiles
@@ -399,6 +405,45 @@ builtin.command_history = function(opts)
 
     -- TODO: Adapt `help` to this.
     -- previewer = previewers.cat,
+  }):find()
+end
+
+builtin.help_tags = function(opts)
+  opts = opts or {}
+
+  local sourced_file = require('plenary.debug_utils').sourced_filepath()
+  local base_directory = vim.fn.fnamemodify(sourced_file, ":h:h:h")
+  local file = base_directory .. "/data/help/tags"
+
+  local tags = {}
+  local f = assert(io.open(file, "rb"))
+    for line in f:lines() do
+      table.insert(tags, line)
+    end
+  f:close()
+
+  pickers.new(opts, {
+    prompt = 'Help',
+    finder = finders.new_table {
+      results = tags,
+      entry_maker = make_entry.gen_from_tagfile(opts),
+    },
+    -- TODO: previewer for Vim help
+    previewer = previewers.help.new(opts),
+    sorter = sorters.get_generic_fuzzy_sorter(),
+    attach_mappings = function(prompt_bufnr, map)
+      local view_help = function()
+        local selection = actions.get_selected_entry(prompt_bufnr)
+
+        actions.close(prompt_bufnr)
+        vim.cmd("help " .. selection.value)
+      end
+
+      map('i', '<CR>', view_help)
+      map('n', '<CR>', view_help)
+
+      return true
+    end
   }):find()
 end
 
