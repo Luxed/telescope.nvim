@@ -712,7 +712,6 @@ builtin.git_branches = function(opts)
 
   pickers.new(opts, {
     prompt = 'Branches',
-    --finder = finders.new_table(results),
     finder = finders.new_table {
       results = results,
       entry_maker = function (line)
