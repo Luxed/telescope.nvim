@@ -714,36 +714,13 @@ builtin.git_branches = function(opts)
     prompt = 'Branches',
     finder = finders.new_table {
       results = results,
-      entry_maker = function (line)
-        local remote_name = ''
-        local branch_name = ''
-        if string.sub(line, 1, 6) == 'heads/' then
-          remote_name = 'local'
-          branch_name = string.match(line, 'heads/(.+)')
-        elseif string.sub(line, 1, 8) == 'remotes/' then
-          local branch = string.match(line, 'remotes/(.+)')
-          remote_name = string.match(branch, '(.-)/')
-          branch_name = string.match(branch, '.-/(.+)')
-        end
-
-        local display = string.format('%s [%s]', branch_name, remote_name)
-
-        return {
-          valid = remote_name ~= '' or branch_name ~= '',
-          entry_type = make_entry.types.GENERIC,
-          value = line,
-          ordinal = line,
-          display = display,
-          remote_name = remote_name,
-          branch_name = branch_name
-        }
-      end
+      entry_maker = make_entry.gen_from_git_branch()
     },
     sorter = sorters.get_generic_fuzzy_sorter(),
 
     attach_mappings = function (_, map)
-      map('i', '<CR>', actions.git_checkout)
-      map('n', '<CR>', actions.git_checkout)
+      map('i', '<CR>', actions.git_checkout_branch)
+      map('n', '<CR>', actions.git_checkout_branch)
       return true
     end,
   }):find()

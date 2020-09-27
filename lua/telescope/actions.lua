@@ -175,7 +175,7 @@ actions.insert_value = function(prompt_bufnr)
   return entry.value
 end
 
-actions.git_checkout = function(prompt_bufnr)
+actions.git_checkout_branch = function(prompt_bufnr)
   local entry = actions.get_selected_entry(prompt_bufnr)
 
   actions.close(prompt_bufnr)
@@ -188,6 +188,14 @@ actions.git_checkout = function(prompt_bufnr)
     git_cmd = string.format('%s -b %s %s/%s', git_cmd, entry.branch_name, entry.remote_name, entry.branch_name)
   end
 
+  vim.cmd(git_cmd)
+end
+
+actions.git_checkout = function(prompt_bufnr)
+  local entry = actions.get_selected_entry(prompt_bufnr)
+  actions.close(prompt_bufnr)
+
+  local git_cmd = '!git checkout ' .. entry.value
   vim.cmd(git_cmd)
 end
 

@@ -339,4 +339,31 @@ function make_entry.gen_from_tagfile(opts)
   end
 end
 
+function make_entry.gen_from_git_branch()
+  return function(line)
+    local remote_name = ''
+    local branch_name = ''
+    if string.sub(line, 1, 6) == 'heads/' then
+      remote_name = 'local'
+      branch_name = string.match(line, 'heads/(.+)')
+    elseif string.sub(line, 1, 8) == 'remotes/' then
+      local branch = string.match(line, 'remotes/(.+)')
+      remote_name = string.match(branch, '(.-)/')
+      branch_name = string.match(branch, '.-/(.+)')
+    end
+
+    local display = string.format('%s [%s]', branch_name, remote_name)
+
+    return {
+      valid = remote_name ~= '' or branch_name ~= '',
+      entry_type = make_entry.types.GENERIC,
+      value = line,
+      ordinal = display,
+      display = display,
+      remote_name = remote_name,
+      branch_name = branch_name
+    }
+  end
+end
+
 return make_entry
